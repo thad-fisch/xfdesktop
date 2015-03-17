@@ -78,6 +78,9 @@ struct _XfceDesktopMenu
     guint idle_id;  /* source id for idled generation */
 };
 
+static const GtkTargetEntry drag_targets[] = {
+    { "text/uri-list", 0, 0, },
+};
 
 static GtkIconTheme *_deskmenu_icon_theme = NULL;
 
@@ -86,6 +89,47 @@ static gboolean _generate_menu(XfceDesktopMenu *desktop_menu);
 static void desktop_menu_add_items(XfceDesktopMenu *desktop_menu,
                                    GarconMenu *garcon_menu,
                                    GtkWidget *menu);
+
+static void
+garcon_menu_item_drag_begin(GarconMenuItem *item,
+                            GdkDragContext *drag_context)
+{
+    const gchar *icon_name;
+
+    g_return_if_fail(GARCON_IS_MENU_ITEM(item));
+
+    icon_name = garcon_menu_item_get_icon_name(item);
+    if(icon_name != NULL && *icon_name != '\0')
+        gtk_drag_set_icon_name(drag_context, icon_name, 0, 0);
+}
+
+static void
+garcon_menu_item_drag_data_get(GarconMenuItem *item,
+                               GdkDragContext *drag_context,
+                               GtkSelectionData *selection_data,
+                               guint info,
+                               guint drag_time)
+{
+    gchar *uris[2] = { NULL, NULL };
+
+    g_return_if_fail(GARCON_IS_MENU_ITEM(item));
+
+    uris[0] = garcon_menu_item_get_uri(item);
+    if(uris[0] != NULL) {
+        gtk_selection_data_set_uris(selection_data, uris);
+        g_free(uris[0]);
+    }
+}
+
+static void
+garcon_menu_item_drag_end(GarconMenu *menu)
+{
+    g_return_if_fail(GTK_IS_MENU(menu));
+
+    gtk_menu_popdown(GTK_MENU(menu));
+
+    g_signal_emit_by_name(G_OBJECT(menu), "selection-done", 0);
+}
 
 static void
 xfce_desktop_menu_reload(XfceDesktopMenu *desktop_menu)
@@ -175,6 +219,19 @@ desktop_menu_add_items(XfceDesktopMenu *desktop_menu,
             gtk_widget_show(mi);
 
             gtk_menu_shell_append(GTK_MENU_SHELL(menu), mi);
+
+            /* allow application menu item dragging */
+            gtk_drag_source_set(mi, GDK_BUTTON1_MASK, drag_targets,
+                                G_N_ELEMENTS(drag_targets), GDK_ACTION_COPY);
+            g_signal_connect_swapped(G_OBJECT(mi), "drag-begin",
+                                     G_CALLBACK(garcon_menu_item_drag_begin),
+                                     l->data);
+            g_signal_connect_swapped(G_OBJECT(mi), "drag-data-get",
+                                     G_CALLBACK(garcon_menu_item_drag_data_get),
+                                     l->data);
+            g_signal_connect_swapped(G_OBJECT(mi), "drag-end",
+                                     G_CALLBACK(garcon_menu_item_drag_end),
+                                     menu);
         }
     }
     g_list_free(items);
